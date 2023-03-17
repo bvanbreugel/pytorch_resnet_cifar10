@@ -275,8 +275,6 @@ def main(**kwargs):
 
         # evaluate on validation set
         prec1 = validate(val_loader, model, criterion)[0]
-        if args.train_dir != "real":
-            _ = validate(val_loader, model, criterion)[0]
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
