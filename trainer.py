@@ -10,7 +10,7 @@ import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import resnet
+import pytorch_resnet_cifar10.resnet as resnet
 from sklearn.metrics import accuracy_score
 
 import numpy as np
@@ -118,6 +118,7 @@ parser.add_argument(
 )
 parser.add_argument("--seed", default=0, type=int)
 parser.add_argument("--train_dir", default="real", type=str)
+parser.add_argument("--train_dir_root", default="SampledImgs", type=str)
 parser.add_argument("--val_dirs", default="real", type=str, nargs='+')
 best_prec1 = 0
 
@@ -131,6 +132,8 @@ def main(**kwargs):
 
     if args.train_dir == "real":
         seed = args.seed + 2 * 16
+    elif type(args.train_dir)==type([]):
+        seed = args.seed + 2 ** 14
     else:
         seed = args.seed + 100 * int(args.train_dir)
 
@@ -158,7 +161,7 @@ def main(**kwargs):
         if os.path.isfile(filename):
             print("=> loading checkpoint '{}'".format(filename))
             checkpoint = torch.load(filename)
-            args.start_epoch = checkpoint["epoch"]
+            args.start_epoch = int(checkpoint["epoch"])
             best_prec1 = checkpoint["best_prec1"]
             model.load_state_dict(checkpoint["state_dict"])
             if 'optimizer' in checkpoint:
@@ -198,10 +201,35 @@ def main(**kwargs):
             num_workers=args.workers,
             pin_memory=True,
         )
+    elif type(args.train_dir) == type([]):
+        data_cat = []
+        for dir in args.train_dir:
+            data_cat.append(datasets.ImageFolder(
+                root=os.path.join(f"{args.train_dir_root}{dir}", "train"),
+                transform=transforms.Compose(
+                    [
+                        transforms.RandomHorizontalFlip(),
+                        transforms.RandomCrop(32, 4),
+                        transforms.ToTensor(),
+                        normalize,
+                    ]
+                ),
+            ))
+        
+        data_cat = torch.utils.data.ConcatDataset(data_cat)
+        train_loader = torch.utils.data.DataLoader(
+            data_cat,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.workers,
+            pin_memory=True
+            )
+        args.epochs /= 5
+        args.epochs = int(args.epochs)
     else:
         train_loader = torch.utils.data.DataLoader(
             datasets.ImageFolder(
-                root=os.path.join(f"SampledImgs{args.train_dir}", "train"),
+                root=os.path.join(f"{args.train_dir_root}{args.train_dir}", "train"),
                 transform=transforms.Compose(
                     [
                         transforms.RandomHorizontalFlip(),
@@ -227,11 +255,12 @@ def main(**kwargs):
                     normalize,
                 ]
             ),
+        download=True
         ),
         batch_size=128,
         shuffle=False,
         num_workers=args.workers,
-        pin_memory=True,
+        pin_memory=True
     )
 
     
@@ -250,7 +279,8 @@ def main(**kwargs):
             else:
                 val_loader_syn = load_test_data(val_dir)
                 res = validate(val_loader_syn, model, criterion)
-            results[val_dir] = res
+            
+            results[val_dir] = {'acc': res[0], 'preds': res[1], 'targets': res[2]}
         return results
         
 
@@ -296,7 +326,7 @@ def load_test_data(dir):
         
     val_loader_syn = torch.utils.data.DataLoader(
                 datasets.ImageFolder(
-                    root=os.path.join(f"SampledImgs{dir}", "test"),
+                    root=os.path.join(f"{args.train_dir_root}{dir}", "test"),
                     transform=transforms.Compose(
                         [
                         transforms.ToTensor(),
@@ -443,7 +473,7 @@ def validate(val_loader, model, criterion):
 
     print(" * Prec@1 {top1.avg:.3f}".format(top1=top1))
     model.train()
-    return top1.avg, outputs, targets
+    return top1.avg, np.concatenate(outputs,axis=0), np.concatenate(targets,axis=0)
 
 
 def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
