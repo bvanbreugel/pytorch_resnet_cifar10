@@ -136,7 +136,8 @@ def main(**kwargs):
         seed = args.seed + 2 ** 14
     else:
         seed = args.seed + 100 * int(args.train_dir)
-
+    
+    seed += 2 ** 16
     # seed pytorch with args.seed
     torch.manual_seed(seed)
 
@@ -144,7 +145,7 @@ def main(**kwargs):
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     filename = os.path.join(
-        args.save_dir, f"{args.arch}_{args.train_dir}_{args.seed}.th"
+        args.save_dir, f"{args.arch}_{args.train_dir}_{seed}.th"
     )
 
     model = torch.nn.DataParallel(resnet.__dict__[args.arch]())
